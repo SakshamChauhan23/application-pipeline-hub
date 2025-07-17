@@ -6,8 +6,17 @@ import { StatusBadge } from "./StatusBadge";
 import { ApplicantModal } from "./ApplicantModal";
 import { AddApplicantModal } from "./AddApplicantModal";
 import CSVImportModal from "./CSVImportModal";
-import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
+import { useAuth } from "@/hooks/useAuth";
+import { 
+  Search as SearchIcon, 
+  Filter as FilterIcon, 
+  Plus as PlusIcon, 
+  Upload as UploadIcon, 
+  Download as DownloadIcon, 
+  Eye,
+  ClipboardCheck
+} from "lucide-react";
 
 // Define the type for our applicant data
 type ApplicantData = {
@@ -62,6 +71,7 @@ const getCurrentStage = (applicant: ApplicantData): string => {
 };
 
 export function ApplicantTable() {
+  const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedApplicant, setSelectedApplicant] = useState<ApplicantData | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -71,66 +81,47 @@ export function ApplicantTable() {
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
+  let supabase: any = undefined;
+  try {
+    supabase = require("@/integrations/supabase/client").supabase;
+  } catch {}
+
   // Fetch applicants from Supabase and set up real-time subscription
   useEffect(() => {
-    fetchApplicants();
-
-    // Set up real-time subscription for automatic updates
-    const channel = supabase
-      .channel('admission_dashboard_changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'admission_dashboard'
-        },
-        (payload) => {
-          console.log('Real-time update received:', payload);
-          // Refetch data when changes occur
-          fetchApplicants();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      console.log('Cleaning up real-time subscription');
-      supabase.removeChannel(channel);
+    if (!supabase || !user) return;
+    let isMounted = true;
+    const checkAndFetch = async () => {
+      if (!supabase || !user) return;
+      if (isMounted) fetchApplicants();
     };
-  }, []);
+    checkAndFetch();
+    return () => { isMounted = false; };
+  }, [user]);
 
   const fetchApplicants = async () => {
+    if (!supabase || !user) return;
     try {
       setLoading(true);
-      
-      // Check authentication state
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        console.warn('No active session, skipping data fetch');
+      if (!supabase.from) {
+        setLoading(false);
         setApplicants([]);
         return;
       }
-
-      console.log('Fetching applicants with authenticated session');
+      
       const { data, error } = await supabase
         .from('admission_dashboard')
         .select('*')
         .order('created_at', { ascending: false });
-
+        
       if (error) {
-        console.error('Supabase error:', error);
-        throw error;
+        console.error('Error fetching applicants:', error);
+        setApplicants([]);
+        return;
       }
-
-      console.log(`Successfully fetched ${data?.length || 0} applicants`);
+      
       setApplicants(data || []);
     } catch (error) {
-      console.error('Error fetching applicants:', error);
-      toast({
-        title: "Error",
-        description: error.message || "Failed to load applicants data",
-        variant: "destructive",
-      });
+      console.error('Error in fetchApplicants:', error);
       setApplicants([]);
     } finally {
       setLoading(false);

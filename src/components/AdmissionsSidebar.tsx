@@ -13,7 +13,6 @@ import { NavLink } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useState, useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
@@ -38,89 +37,6 @@ export function AdmissionsSidebar() {
     interviewRounds: 0,
     decisions: 0,
   });
-
-  const fetchStageCounts = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from('admission_dashboard')
-        .select('*');
-
-      if (error) {
-        console.error('Error fetching stage counts:', error);
-        return;
-      }
-
-      if (data) {
-        let sourcing = 0;
-        let screening = 0;
-        let interviewRounds = 0;
-        let decisions = 0;
-
-        data.forEach(applicant => {
-          // Final Decisions: those who have joined
-          if (applicant.joining_status && 
-              (applicant.joining_status.toLowerCase().includes('joined') || 
-               applicant.joining_status.toLowerCase().includes('onboarded'))) {
-            decisions++;
-          }
-          // Interview Rounds: those with lr_status or cfr_status
-          else if ((applicant.lr_status && applicant.lr_status.trim() !== '') ||
-                   (applicant.cfr_status && applicant.cfr_status.trim() !== '')) {
-            interviewRounds++;
-          }
-          // Screening Tests: those with final_marks or qualifying_school
-          else if (applicant.final_marks !== null || 
-                   (applicant.qualifying_school && applicant.qualifying_school.trim() !== '')) {
-            screening++;
-          }
-          // Sourcing & Outreach: everyone else
-          else {
-            sourcing++;
-          }
-        });
-
-        setStageCounts({
-          sourcing,
-          screening,
-          interviewRounds,
-          decisions,
-        });
-      }
-    } catch (error) {
-      console.error('Error calculating stage counts:', error);
-    }
-  };
-
-  useEffect(() => {
-    fetchStageCounts();
-
-    // Set up real-time subscription for automatic updates
-    const channel = supabase
-      .channel('sidebar_stage_counts')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'admission_dashboard'
-        },
-        (payload) => {
-          console.log('Real-time stage counts update received:', payload);
-          fetchStageCounts();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      console.log('Cleaning up sidebar stage counts subscription');
-      supabase.removeChannel(channel);
-    };
-  }, []);
 
   const stages = [
     { name: "Sourcing & Outreach", href: "/sourcing", count: stageCounts.sourcing },
